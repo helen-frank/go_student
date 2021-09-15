@@ -88,7 +88,7 @@ yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce
 yum-config-manager  --add-repo  http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo                          # 阿里源 
 
 #设置加速仓库(安装好后需要下载镜像之类的进行加速) 
-tee /etc/docker/daemon.json <<-'EOF'
+ tee /etc/docker/daemon.json <<-'EOF'
 {
 	"registry-mirrors": ["https://8sqb5nwq.mirror.aliyuncs.com"] 
 }
