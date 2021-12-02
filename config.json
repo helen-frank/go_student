@@ -1,0 +1,130 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 10808,
+      "listen": "127.0.0.1",
+      "tag": "socks-inbound",
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": false,
+        "ip": "127.0.0.1"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
+    },
+    {
+      "port": 10809,
+      "protocol": "http",
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      },
+      "settings": {
+        "auth": "noauth",
+        "udp": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "mux": {},
+      "protocol": "vmess",
+      "sendThrough": "0.0.0.0",
+      "settings": {
+        "vnext": [
+          {
+            "address": "CUT.SSRSS.CLUB",
+            "port": 5501,
+            "users": [
+              {
+                "alterId": 2,
+                "id": "df75ac98-166a-04ce-c3ac-f51e44008999"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "tlsSettings": {
+          "disableSystemRoot": false
+        },
+        "wsSettings": {
+          "headers": {
+            "Host": "761384820-server.s0.aicdn.com"
+          }
+        },
+        "xtlsSettings": {
+          "disableSystemRoot": false
+        }
+      },
+      "tag": "PROXY"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:category-ads"
+        ],
+        "outboundTag": "blocked"
+      }
+    ]
+  },
+  "dns": {
+    "hosts": {
+      "domain:v2ray.com": "www.vicemc.net",
+      "domain:github.io": "pages.github.com",
+      "domain:wikipedia.org": "www.wikimedia.org",
+      "domain:shadowsocks.org": "electronicsrealm.com"
+    },
+    "servers": [
+      "1.1.1.1",
+      {
+        "address": "114.114.114.114",
+        "port": 53,
+        "domains": [
+          "geosite:cn"
+        ]
+      },
+      "8.8.8.8",
+      "localhost"
+    ]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "uplinkOnly": 0,
+        "downlinkOnly": 0
+      }
+    },
+    "system": {
+      "statsInboundUplink": false,
+      "statsInboundDownlink": false,
+      "statsOutboundUplink": false,
+      "statsOutboundDownlink": false
+    }
+  },
+  "other": {}
+}
