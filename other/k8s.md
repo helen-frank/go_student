@@ -323,8 +323,19 @@ gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors
 EOF
 
 yum install -y kubelet-1.18.0 kubeadm-1.18.0 kubectl-1.18.0
-systemctl enable --now kubelet
-# 检查kubelet是否成功启动
+systemctl enable kubelet
+
+# bash自动补全
+yum install bash-completion
+# 要查看结果，请重新加载你的 shell，并运行命令 type _init_completion。 如果命令执行成功，则设置完成，否则将下面内容添加到文件 ~/.bashrc 中：
+type _init_completion
+source /usr/share/bash-completion/bash_completion
+kubectl completion bash >/etc/bash_completion.d/kubectl
+
+# 如果 kubectl 有关联的别名，你可以扩展 shell 补全来适配此别名
+echo 'alias k=kubectl' >>~/.bashrc
+echo 'complete -F __start_kubectl k' >>~/.bashrc
+source ~/.bashrc
 ```
 
 #### 2.3.2.5 部署kubernetes Master节点
@@ -726,7 +737,7 @@ kubectl get pod, svc
 
 
 
-# 4. Kubernetes 集群YAML文件详解
+# 4. YAML文件详解
 
 ## 4.1 概述
 
@@ -997,7 +1008,7 @@ Probe支持以下三种检查方式
 
 ### 5.7.2 影响Pod调度的属性
 
-Pod资源限制对Pod的调度会有影响
+Pod资源限制对Pod的调度会有影响kubc
 
 #### 5.7.2.1 根据request找到足够node节点进行调度
 
@@ -1010,7 +1021,8 @@ Pod资源限制对Pod的调度会有影响
 我们可以通过以下命令，给我们的节点新增标签，然后节点选择器就会进行调度了
 
 ```bash
-kubectl label node node1 env_role=prod
+kubectl label node k8snode1 env_role=dev
+kubectl get nodes k8snode1 --show-labels
 ```
 
 
@@ -1058,7 +1070,7 @@ kubectl describe node k8smaster | grep Taint
 - PreferNoSchedule：尽量不被调度【也有被调度的几率】
 - NoExecute：不会调度，并且还会驱逐Node已有Pod
 
-### 5.8.4 未节点添加污点
+### 5.8.4 为节点添加污点
 
 ```bash
 kubectl taint node [node] key=value:污点的三个值
@@ -1078,7 +1090,7 @@ kubectl taint node k8snode1 env_role:NoSchedule-
 
 ![image-20201114210022883](k8s.assets/image-20201114210022883.png)
 
-### 5.8.4 演示
+### 5.8.6 演示
 
 我们现在创建多个Pod，查看最后分配到Node上的情况
 
@@ -1153,7 +1165,7 @@ kubectl get pods -o wide
 kubectl taint node k8snode1 env_role:NoSchedule-
 ```
 
-### 5.8.5 污点容忍
+### 5.8.7 污点容忍
 
 污点容忍就是某个节点可能被调度，也可能不被调度
 
