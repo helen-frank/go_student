@@ -1173,6 +1173,1000 @@ kubectl taint node k8snode1 env_role:NoSchedule-
 
 
 
+# 6. Controller
+
+## 6.1 什么是Controller
+
+Controller是在集群上管理和运行容器的对象，Controller是实际存在的，Pod是虚拟机的
+
+## 6.2 Pod和Controller的关系
+
+Pod是通过Controller实现应用的运维，比如弹性伸缩，滚动升级等
+
+Pod 和 Controller之间是通过label标签来建立关系，同时Controller又被称为控制器工作负载
+
+![image-20201116092431237](k8s.assets/image-20201116092431237.png)
+
+## 6.3 Deployment控制器应用
+
+- Deployment控制器可以部署无状态应用
+- 管理Pod和ReplicaSet
+- 部署，滚动升级等功能
+- 应用场景：web服务，微服务
+
+Deployment表示用户对K8S集群的一次更新操作。Deployment是一个比RS( Replica Set, RS) 应用模型更广的 API 对象，可以是创建一个新的服务，更新一个新的服务，也可以是滚动升级一个服务。滚动升级一个服务，实际是创建一个新的RS，然后逐渐将新 RS 中副本数增加到理想状态，将旧RS中的副本数减少到0的复合操作。
+
+这样一个复合操作用一个RS是不好描述的，所以用一个更通用的Deployment来描述。以K8S的发展方向，未来对所有长期伺服型的业务的管理，都会通过Deployment来管理。
+
+## 6.4 Deployment部署应用
+
+之前我们也使用Deployment部署过应用，如下代码所示
+
+```bash
+kubectrl create deployment web --image=nginx
+```
+
+但是上述代码不是很好的进行复用，因为每次我们都需要重新输入代码，所以我们都是通过YAML进行配置
+
+但是我们可以尝试使用上面的代码创建一个镜像【只是尝试，不会创建】
+
+```bash
+kubectl create deployment web --image=nginx --dry-run -o yaml > nginx.yaml
+```
+
+然后输出一个yaml配置文件 `nginx.yml` ，配置文件如下所示
+
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: web
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: web
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        resources: {}
+status: {}
+```
+
+我们看到的 selector 和 label 就是我们Pod 和 Controller之间建立关系的桥梁
+
+![image-20201116093638951](k8s.assets/image-20201116093638951.png)
+
+### 6.4.1 使用YAML创建Pod
+
+通过刚刚的代码，我们已经生成了YAML文件，下面我们就可以使用该配置文件快速创建Pod镜像了
+
+```bash
+kubectl apply -f nginx.yaml
+```
+
+![image-20201116094046007](k8s.assets/image-20201116094046007-16387583487142.png)
+
+但是因为这个方式创建的，我们只能在集群内部进行访问，所以我们还需要对外暴露端口
+
+```bash
+kubectl expose deployment web --port=80 --type=NodePort --target-port=80 --name=web1
+```
+
+关于上述命令，有几个参数
+
+- --port：就是我们内部的端口号
+- --target-port：就是暴露外面访问的端口号
+- --name：名称
+- --type：类型
+
+同理，我们一样可以导出对应的配置文件
+
+```bash
+kubectl expose deployment web --port=80 --type=NodePort --target-port=80 --name=web1 -o yaml > web1.yaml
+```
+
+得到的web1.yaml如下所示
+
+```bash
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2020-11-16T02:26:53Z"
+  labels:
+    app: web
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:app: {}
+      f:spec:
+        f:externalTrafficPolicy: {}
+        f:ports:
+          .: {}
+          k:{"port":80,"protocol":"TCP"}:
+            .: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector:
+          .: {}
+          f:app: {}
+        f:sessionAffinity: {}
+        f:type: {}
+    manager: kubectl
+    operation: Update
+    time: "2020-11-16T02:26:53Z"
+  name: web2
+  namespace: default
+  resourceVersion: "113693"
+  selfLink: /api/v1/namespaces/default/services/web2
+  uid: d570437d-a6b4-4456-8dfb-950f09534516
+spec:
+  clusterIP: 10.104.174.145
+  externalTrafficPolicy: Cluster
+  ports:
+  - nodePort: 32639
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: web
+  sessionAffinity: None
+  type: NodePort
+status:
+  loadBalancer: {}
+```
+
+然后我们可以通过下面的命令来查看对外暴露的服务
+
+```bash
+kubectl get pods,svc
+```
+
+![image-20201116104021357](k8s.assets/image-20201116104021357.png)
+
+然后我们访问对应的url，即可看到 nginx了 
+
+`http://192.168.194.170:32639`
+
+![image-20201116104131968](k8s.assets/image-20201116104131968.png)
+
+## 6.5升级回滚和弹性伸缩
+
+- 升级：  假设从版本为1.14 升级到 1.15 ，这就叫应用的升级【升级可以保证服务不中断】
+- 回滚：从版本1.15 变成 1.14，这就叫应用的回滚
+- 弹性伸缩：我们根据不同的业务场景，来改变Pod的数量对外提供服务，这就是弹性伸缩
+
+### 6.5.1 应用升级和回滚
+
+首先我们先创建一个 1.14版本的Pod
+
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: web
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: web
+    spec:
+      containers:
+      - image: nginx:1.14
+        name: nginx
+        resources: {}
+status: {}
+```
+
+我们先指定版本为1.14，然后开始创建我们的Pod
+
+```bash
+kubectl apply -f nginx.yaml
+```
+
+同时，我们使用docker images命令，就能看到我们成功拉取到了一个 1.14版本的镜像
+
+![image-20201116105710966](k8s.assets/image-20201116105710966.png)
+
+我们使用下面的命令，可以将nginx从 1.14 升级到 1.15
+
+```bash
+kubectl set image deployment web nginx=nginx:1.15
+```
+
+在我们执行完命令后，能看到升级的过程
+
+![image-20201116105847069](k8s.assets/image-20201116105847069.png)
+
+- 首先是开始的nginx 1.14版本的Pod在运行，然后 1.15版本的在创建
+- 然后在1.15版本创建完成后，就会暂停1.14版本
+- 最后把1.14版本的Pod移除，完成我们的升级
+
+我们在下载 1.15版本，容器就处于ContainerCreating状态，然后下载完成后，就用 1.15版本去替换1.14版本了，这么做的好处就是：升级可以保证服务不中断
+
+![image-20201116111614085](k8s.assets/image-20201116111614085.png)
+
+我们到我们的node2节点上，查看我们的 docker images;
+
+![image-20201116111315000](k8s.assets/image-20201116111315000.png)
+
+能够看到，我们已经成功拉取到了 1.15版本的nginx了
+
+#### 6.5.1.1 查看升级状态
+
+下面可以，查看升级状态
+
+```bash
+kubectl rollout status deployment web
+```
+
+![image-20201116112139645](k8s.assets/image-20201116112139645.png)
+
+#### 6.5.1.2 查看历史版本
+
+我们还可以查看历史版本
+
+```bash
+kubectl rollout history deployment web
+```
+
+#### 6.5.1.3 应用回滚
+
+我们可以使用下面命令，完成回滚操作，也就是回滚到上一个版本
+
+```bash
+kubectl rollout undo deployment web
+```
+
+然后我们就可以查看状态
+
+```bash
+kubectl rollout status deployment web
+```
+
+![image-20201116112524601](k8s.assets/image-20201116112524601.png)
+
+同时我们还可以回滚到指定版本
+
+```bash
+kubectl rollout undo deployment web --to-revision=2
+```
+
+### 6.5.2 弹性伸缩
+
+弹性伸缩，也就是我们通过命令一下创建多个副本
+
+```bash
+kubectl scale deployment web --replicas=10
+```
+
+能够清晰看到，我们一下创建了10个副本
+
+![image-20201117092841865](k8s.assets/image-20201117092841865.png)
+
+# 7. Service
+
+## 7.1 前言
+
+前面我们了解到 Deployment 只是保证了支撑服务的微服务Pod的数量，但是没有解决如何访问这些服务的问题。一个Pod只是一个运行服务的实例，随时可能在一个节点上停止，在另一个节点以一个新的IP启动一个新的Pod，因此不能以确定的IP和端口号提供服务。
+
+要稳定地提供服务需要服务发现和负载均衡能力。服务发现完成的工作，是针对客户端访问的服务，找到对应的后端服务实例。在K8S集群中，客户端需要访问的服务就是Service对象。每个Service会对应一个集群内部有效的虚拟IP，集群内部通过虚拟IP访问一个服务。
+
+在K8S集群中，微服务的负载均衡是由kube-proxy实现的。kube-proxy是k8s集群内部的负载均衡器。它是一个分布式代理服务器，在K8S的每个节点上都有一个；这一设计体现了它的伸缩性优势，需要访问服务的节点越多，提供负载均衡能力的kube-proxy就越多，高可用节点也随之增多。与之相比，我们平时在服务器端使用反向代理作负载均衡，还要进一步解决反向代理的高可用问题。
+
+## 7.2 Service存在的意义
+
+### 7.2.1 防止Pod失联【服务发现】
+
+因为Pod每次创建都对应一个IP地址，而这个IP地址是短暂的，每次随着Pod的更新都会变化，假设当我们的前端页面有多个Pod时候，同时后端也多个Pod，这个时候，他们之间的相互访问，就需要通过注册中心，拿到Pod的IP地址，然后去访问对应的Pod
+
+![image-20201117093606710](k8s.assets/image-20201117093606710.png)
+
+### 7.2.2 定义Pod访问策略【负载均衡】
+
+页面前端的Pod访问到后端的Pod，中间会通过Service一层，而Service在这里还能做负载均衡，负载均衡的策略有很多种实现策略，例如：
+
+- 随机
+- 轮询
+- 响应比
+
+![image-20201117093902459](k8s.assets/image-20201117093902459.png)
+
+## 7.3 Pod和Service的关系
+
+这里Pod 和 Service 之间还是根据 label 和 selector 建立关联的 【和Controller一样】
+
+![image-20201117094142491](k8s.assets/image-20201117094142491.png)
+
+我们在访问service的时候，其实也是需要有一个ip地址，这个ip肯定不是pod的ip地址，而是 虚拟IP `vip` 
+
+## 7.4 Service常用类型
+
+Service常用类型有三种
+
+- ClusterIp：集群内部访问
+- NodePort：对外访问应用使用
+- LoadBalancer：对外访问应用使用，公有云
+
+### 7.4.1 举例
+
+我们可以导出一个文件 包含service的配置信息
+
+```bash
+kubectl expose deployment web --port=80 --target-port=80 --dry-run -o yaml > service.yaml
+```
+
+service.yaml 如下所示
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: web
+  name: web
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: web
+status:
+  loadBalancer: {}
+```
+
+如果我们没有做设置的话，默认使用的是第一种方式 ClusterIp，也就是只能在集群内部使用，我们可以添加一个type字段，用来设置我们的service类型
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: web
+  name: web
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: web
+  type: NodePort
+status:
+  loadBalancer: {}
+```
+
+修改完命令后，我们使用创建一个pod
+
+```bash
+kubectl apply -f service.yaml
+```
+
+然后能够看到，已经成功修改为 NodePort类型了，最后剩下的一种方式就是LoadBalanced：对外访问应用使用公有云
+
+node一般是在内网进行部署，而外网一般是不能访问到的，那么如何访问的呢？
+
+- 找到一台可以通过外网访问机器，安装nginx，反向代理
+- 手动把可以访问的节点添加到nginx中
+
+如果我们使用LoadBalancer，就会有负载均衡的控制器，类似于nginx的功能，就不需要自己添加到nginx上
+
+
+
+# 8. Controller详解
+
+## 8.1 Statefulset
+
+Statefulset主要是用来部署有状态应用
+
+对于StatefulSet中的Pod，每个Pod挂载自己独立的存储，如果一个Pod出现故障，从其他节点启动一个同样名字的Pod，要挂载上原来Pod的存储继续以它的状态提供服务。
+
+### 8.1.1 无状态应用
+
+我们原来使用 deployment，部署的都是无状态的应用，那什么是无状态应用？
+
+- 认为Pod都是一样的
+- 没有顺序要求
+- 不考虑应用在哪个node上运行
+- 能够进行随意伸缩和扩展
+
+### 8.1.2 有状态应用
+
+上述的因素都需要考虑到
+
+- 让每个Pod独立的
+- 让每个Pod独立的，保持Pod启动顺序和唯一性
+  - 唯一的网络标识符，持久存储
+  - 有序，比如mysql中的主从
+
+
+适合StatefulSet的业务包括数据库服务MySQL 和 PostgreSQL，集群化管理服务Zookeeper、etcd等有状态服务
+
+StatefulSet的另一种典型应用场景是作为一种比普通容器更稳定可靠的模拟虚拟机的机制。传统的虚拟机正是一种有状态的宠物，运维人员需要不断地维护它，容器刚开始流行时，我们用容器来模拟虚拟机使用，所有状态都保存在容器里，而这已被证明是非常不安全、不可靠的。
+
+使用StatefulSet，Pod仍然可以通过漂移到不同节点提供高可用，而存储也可以通过外挂的存储来提供
+高可靠性，StatefulSet做的只是将确定的Pod与确定的存储关联起来保证状态的连续性。
+
+### 8.1.3 部署有状态应用
+
+无头service， ClusterIp：none
+
+这里就需要使用 StatefulSet部署有状态应用
+
+
+
+![image-20201117202950336](k8s.assets/image-20201117202950336.png)
+
+![image-20201117203130867](k8s.assets/image-20201117203130867.png)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+    name: nginx001
+  clusterIP: None
+  selector:
+    app: nginx
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nginx-statefulset
+  namespace: default
+spec:
+  serviceName: nginx
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx001
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nginx001
+    spec:
+      containers:
+        - image: nginx:latest
+          name: nginx
+          ports:
+            - containerPort: 80
+```
+
+然后通过查看pod，能否发现每个pod都有唯一的名称
+
+![image-20201117203217016](k8s.assets/image-20201117203217016.png)
+
+然后我们在查看service，发现是无头的service
+
+![image-20201117203245641](k8s.assets/image-20201117203245641.png)
+
+这里有状态的约定，肯定不是简简单单通过名称来进行约定，而是更加复杂的操作
+
+- deployment：是有身份的，有唯一标识
+- statefulset：根据主机名 + 按照一定规则生成域名
+
+每个pod有唯一的主机名，并且有唯一的域名
+
+- 格式：主机名称.service名称.名称空间.svc.cluster.local
+- 举例：nginx-statefulset-0.default.svc.cluster.local
+
+## 8.2 DaemonSet
+
+DaemonSet 即后台支撑型服务，主要是用来部署守护进程
+
+长期伺服型和批处理型的核心在业务应用，可能有些节点运行多个同类业务的Pod，有些节点上又没有这类的Pod运行；而后台支撑型服务的核心关注点在K8S集群中的节点(物理机或虚拟机)，要保证每个节点上都有一个此类Pod运行。节点可能是所有集群节点，也可能是通过 nodeSelector选定的一些特定节点。典型的后台支撑型服务包括：存储、日志和监控等。在每个节点上支撑K8S集群运行的服务。
+
+守护进程在我们每个节点上，运行的是同一个pod，新加入的节点也同样运行在同一个pod里面
+
+- 例子：在每个node节点安装数据采集工具
+
+![image-20201117204430836](k8s.assets/image-20201117204430836.png)
+
+`ds.yaml`
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ds-test
+  labels:
+    app: filebeat
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      containers:
+      - name: logs
+        image: nginx
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: varlog
+          mountPath: /tmp/log
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+```
+
+这里是不是一个FileBeat镜像，主要是为了做日志采集工作
+
+![image-20201117204810350](k8s.assets/image-20201117204810350.png)
+
+进入某个 Pod里面，进入
+
+```bash
+kubectl exec -it ds-test-cbk6v bash
+```
+
+通过该命令后，我们就能看到我们内部收集的日志信息了
+
+![image-20201117204912838](k8s.assets/image-20201117204912838.png)
+
+
+
+## 8.3 Job和CronJob
+
+一次性任务 和 定时任务
+
+- 一次性任务：一次性执行完就结束
+- 定时任务：周期性执行
+
+Job是K8S中用来控制批处理型任务的API对象。批处理业务与长期伺服业务的主要区别就是批处理业务的运行有头有尾，而长期伺服业务在用户不停止的情况下永远运行。Job管理的Pod根据用户的设置把任务成功完成就自动退出了。成功完成的标志根据不同的 spec.completions 策略而不同：单Pod型任务有一个Pod成功就标志完成；定数成功行任务保证有N个任务全部成功；工作队列性任务根据应用确定的全局成功而标志成功。
+
+### 8.3.1 Job
+
+Job也即一次性任务
+
+![image-20201117205635945](k8s.assets/image-20201117205635945.png)
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  template:
+    spec:
+      containers:
+      - name: pi
+        image: perl
+        command: ["perl", "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      restartPolicy: Never
+  backoffLimit: 4
+```
+
+```bash
+kubectl create -f job.yaml
+```
+
+使用下面命令，能够看到目前已经存在的Job
+
+```bash
+kubectl get jobs
+```
+
+![image-20201117205948374](k8s.assets/image-20201117205948374.png)
+
+在计算完成后，通过命令查看，能够发现该任务已经完成
+
+![image-20201117210031725](k8s.assets/image-20201117210031725.png)
+
+我们可以通过查看日志，查看到一次性任务的结果
+
+```bash
+kubectl logs pi-qpqff
+```
+
+![image-20201117210110343](k8s.assets/image-20201117210110343.png)
+
+### 8.3.2 CronJob
+
+定时任务，`cronjob.yaml`如下所示
+
+![image-20201117210309069](k8s.assets/image-20201117210309069.png)
+
+这里面的命令就是每个一段时间，这里是通过 cron 表达式配置的，通过 schedule字段
+
+然后下面命令就是每个一段时间输出 
+
+我们首先用上述的配置文件，创建一个定时任务
+
+```bash
+kubectl apply -f cronjob.yaml
+```
+
+创建完成后，我们就可以通过下面命令查看定时任务
+
+```bash
+kubectl get cronjobs
+```
+
+![image-20201117210611783](k8s.assets/image-20201117210611783.png)
+
+我们可以通过日志进行查看
+
+```bash
+kubectl logs hello-1599100140-wkn79
+```
+
+![image-20201117210722556](k8s.assets/image-20201117210722556.png)
+
+然后每次执行，就会多出一个 pod
+
+![image-20201117210751068](k8s.assets/image-20201117210751068.png)
+
+## 8.4 删除svc 和 statefulset
+
+使用下面命令，可以删除我们添加的svc 和 statefulset
+
+```bash
+kubectl delete svc web
+
+kubectl delete statefulset --all
+```
+
+## 8.5 Replication Controller
+
+Replication Controller 简称 **RC**，是K8S中的复制控制器。RC是K8S集群中最早的保证Pod高可用的API对象。通过监控运行中的Pod来保证集群中运行指定数目的Pod副本。指定的数目可以是多个也可以是1个；少于指定数目，RC就会启动新的Pod副本；多于指定数目，RC就会杀死多余的Pod副本。
+
+即使在指定数目为1的情况下，通过RC运行Pod也比直接运行Pod更明智，因为RC也可以发挥它高可用的能力，保证永远有一个Pod在运行。RC是K8S中较早期的技术概念，只适用于长期伺服型的业务类型，比如控制Pod提供高可用的Web服务。
+
+### 8.5.1 Replica Set
+
+Replica Set 检查 RS，也就是副本集。RS是新一代的RC，提供同样高可用能力，区别主要在于RS后来居上，能够支持更多种类的匹配模式。副本集对象一般不单独使用，而是作为Deployment的理想状态参数来使用
+
+# 9. Kubernetes配置管理
+
+## 9.1 Secret
+
+Secret的主要作用就是加密数据，然后存在etcd里面，让Pod容器以挂载Volume方式进行访问
+
+场景：用户名 和 密码进行加密
+
+一般场景的是对某个字符串进行base64编码 进行加密
+
+```bash
+echo -n 'admin' | base64
+```
+
+![image-20201117212037668](k8s.assets/image-20201117212037668.png)
+
+### 9.1.1 创建secret加密数据
+
+ `secret.yaml`
+
+![image-20201117212124476](k8s.assets/image-20201117212124476.png)
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysecret
+type: Opaque
+data:
+  username: YWRtaW4=
+  password: aGVsZW4=
+```
+
+![image-20211206154955143](k8s.assets/image-20211206154955143.png)
+
+然后使用下面命令创建一个secret
+
+```bash
+kubectl create -f secret.yaml
+```
+
+通过get命令查看
+
+```bash
+kubectl get secret
+```
+
+![image-20211206155942122](k8s.assets/image-20211206155942122.png)
+
+### 9.1.2 变量形式挂载到Pod
+
+`secret-val.yaml`
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    env:
+      - name: SECRET_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: mysecret
+            key: username
+      - name: SECRET_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysecret
+            key: password
+```
+
+```bash
+kubectl apply -f secret-val.yaml
+```
+
+然后我们通过下面的命令，进入到我们的容器内部
+
+```bash
+kubectl exec -it mypod bash
+```
+
+然后我们就可以输出我们的值，这就是以变量的形式挂载到我们的容器中
+
+```bash
+# 输出用户
+echo $SECRET_USERNAME
+# 输出密码
+echo $SECRET_PASSWORD
+```
+
+最后如果我们要删除这个Pod，就可以使用这个命令
+
+```bash
+kubectl delete -f secret-val.yaml
+```
+
+### 9.1.3 数据卷形式挂载
+
+首先我们创建一个 `secret-vol.yaml` 文件
+
+![image-20201118084321590](k8s.assets/image-20201118084321590.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    volumeMounts:
+    - name: foo
+      mountPath: "/etc/foo"
+      readOnly: true
+  volumes:
+  - name: foo
+    secret:
+      secretName: mysecret
+```
+
+然后创建我们的 Pod
+
+```bash
+# 根据配置创建容器
+kubectl apply -f secret-vol.yaml
+# 进入容器
+kubectl exec -it mypod bash
+# 查看
+ls /etc/foo
+```
+
+![image-20201118084707478](k8s.assets/image-20201118084707478.png)
+
+## 9.2 ConfigMap
+
+ConfigMap作用是存储不加密的数据到etcd中，让Pod以变量或数据卷Volume挂载到容器中
+
+应用场景：配置文件
+
+### 9.2.1 创建配置文件
+
+首先我们需要创建一个配置文件 `redis.properties`
+
+```bash
+redis.port=127.0.0.1
+redis.port=6379
+redis.password=123456
+```
+
+### 9.2.2 创建ConfigMap
+
+我们使用命令创建configmap
+
+```bash
+kubectl create configmap redis-config --from-file=redis.properties
+```
+
+然后查看详细信息
+
+```bash
+kubectl describe cm redis-config
+```
+
+![image-20201118085503534](k8s.assets/image-20201118085503534.png)
+
+### 9.2.3 Volume数据卷形式挂载
+
+首先我们需要创建一个 `cm.yaml`
+
+![image-20201118085847424](k8s.assets/image-20201118085847424.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: [ "/bin/sh", "-c" , "cat /etc/config/redis.properties" ]
+      volumeMounts:
+      - name: config-volume
+        mountPath: /etc/config
+  volumes:
+    - name: config-volume
+      configMap:
+        name: redis-config
+  restartPolicy: Never
+```
+
+然后使用该yaml创建我们的pod
+
+```bash
+# 创建
+kubectl apply -f cm.yaml
+# 查看
+kubectl get pods
+```
+
+![image-20201118090634869](k8s.assets/image-20201118090634869.png)
+
+最后我们通过命令就可以查看结果输出了
+
+```bash
+kubectl logs mypod
+```
+
+![image-20201118090712780](k8s.assets/image-20201118090712780.png)
+
+### 9.2.4 以变量的形式挂载Pod
+
+首先我们也有一个 myconfig.yaml文件，声明变量信息，然后以configmap创建
+
+![image-20201118090911260](k8s.assets/image-20201118090911260.png)
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myconfig
+  namespace: default
+data:
+  special.level: info
+  special.type: hello
+```
+
+然后我们就可以创建我们的配置文件
+
+```bash
+# 创建pod
+kubectl apply -f myconfig.yaml
+# 获取
+kubectl get cm
+```
+
+![image-20201118091042287](k8s.assets/image-20201118091042287.png)
+
+然后我们创建完该pod后，我们就需要在创建一个  config-var.yaml 来使用我们的配置信息
+
+![image-20201118091249520](k8s.assets/image-20201118091249520.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: [ "/bin/sh", "-c" , "echo $(LEVEL) $(TYPE)" ]
+      env:
+        - name: LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: myconfig
+              key: special.level
+        - name: TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: myconfig
+              key: special.type
+  restartPolicy: Never
+```
+
+```bash
+kubectl apply -f config-var.yaml
+```
+
+最后我们查看输出
+
+```bash
+kubectl logs mypod
+```
+
+![image-20201118091448252](k8s.assets/image-20201118091448252.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -46,3 +46,11 @@ set noerrorbells
 set autoread
 set wildmenu
 set wildmode=longest:list,full
+set paste
+
+" yaml
+autocmd FileType yaml setlocal ai ts=2 sw=2 et
+" ai = auto indent "自动退格对齐
+" set tabstop=2 "（ts=tabstop，即一个tab的宽度被设为2个空格辣么宽）
+" set shiftwidth=2 "（sw=shiftwidth，即退格对齐以2个空格为准）
+" set expandtab "（et=expandtab，将tab变成空格）
