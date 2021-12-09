@@ -668,6 +668,8 @@ kubectl get --help
 |  edit   |          使用默认的编辑器编辑一个资源          |
 | delete  | 通过文件名，标准输入，资源名称或标签来删除资源 |
 
+> - expose补充    targetPort 是指 pod 里服务在 podIP 上监听的端口，必须指定； port 是 expose 出来在 svc 上提供对外服务的端口，也必须指定；而 nodePort 是指定了 nodePort 方式后在 node IP 上提供服务的端口，这个不指定则随机分配。
+
 ### 3.2.3 部署命令
 
 |      命令      |                        介绍                        |
@@ -1578,6 +1580,12 @@ node一般是在内网进行部署，而外网一般是不能访问到的，那�
 
 如果我们使用LoadBalancer，就会有负载均衡的控制器，类似于nginx的功能，就不需要自己添加到nginx上
 
+| type       | describe                                                     | tips |
+| ---------- | ------------------------------------------------------------ | ---- |
+| nodePort   | 此设置通过节点的 IP 地址和此属性中声明的端口号使服务在 Kubernetes 集群*外部*可见。该服务还必须是 NodePort 类型（如果未指定此字段，Kubernetes 将自动分配一个节点端口）。 |      |
+| port       | 在集群内部的指定端口上 公开*服务*。也就是说，该服务在该端口上变得可见，并将向该端口发出的请求发送到该服务选择的 Pod |      |
+| targetPort | 这是请求发送到的*pod*上的*端口*。您的应用程序需要在此端口上侦听网络请求才能使服务正常工作 |      |
+
 
 
 # 8. Controller详解
@@ -2141,13 +2149,1186 @@ kubectl logs mypod
 
 
 
+# 10. 集群安全机制
+
+## 10.1 概述
+
+当我们访问K8S集群时，需要经过三个步骤完成具体操作
+
+- 认证
+- 鉴权【授权】
+- 准入控制
+
+进行访问的时候，都需要经过 apiserver， apiserver做统一协调，比如门卫
+
+- 访问过程中，需要证书、token、或者用户名和密码
+- 如果访问pod需要serviceAccount
+
+![image-20201118092356107](k8s.assets/image-20201118092356107.png)
+
+### 10.1.1 认证
+
+对外不暴露`8080`端口，只能内部访问，对外使用的端口`6443`
+
+客户端身份认证常用方式
+
+- https证书认证，基于ca证书
+- http token认证，通过token来识别用户
+- http基本认证，用户名 + 密码认证
+
+### 10.1.2 鉴权
+
+基于RBAC进行鉴权操作
+
+基于角色访问控制
+
+### 10.1.3 准入控制
+
+就是准入控制器的列表，如果列表有请求内容就通过，没有的话 就拒绝
+
+## 10.2 RBAC介绍
+
+基于角色的访问控制，为某个角色设置访问内容，然后用户分配该角色后，就拥有该角色的访问权限
+
+![image-20201118093949893](k8s.assets/image-20201118093949893.png)
+
+k8s中有默认的几个角色
+
+- role：特定命名空间访问权限
+- ClusterRole：所有命名空间的访问权限
+
+角色绑定
+
+- roleBinding：角色绑定到主体
+- ClusterRoleBinding：集群角色绑定到主体
+
+主体
+
+- user：用户
+- group：用户组
+- serviceAccount：服务账号
+
+## 10.3 RBAC实现鉴权
+
+### 10.3.1 创建命名空间
+
+我们可以首先查看已经存在的命名空间
+
+```bash
+kubectl get namespace
+```
+
+![image-20201118094516426](k8s.assets/image-20201118094516426.png)
+
+然后我们创建一个自己的命名空间  roledemo
+
+```bash
+kubectl create ns roledemo
+```
+
+### 10.3.2 命名空间创建Pod
+
+为什么要创建命名空间？因为如果不创建命名空间的话，默认是在default下
+
+```bash
+kubectl run nginx --image=nginx -n roledemo
+```
+
+### 10.3.3 创建角色
+
+我们通过 rbac-role.yaml进行创建
+
+![image-20201118094851338](k8s.assets/image-20201118094851338.png)
+
+```yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: roledemo
+  name: pod-reader
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+```
+
+> tips：这个角色只对pod 有 get、list权限
+
+然后通过 yaml创建我们的role
+
+```bash
+# 创建
+kubectl apply -f rbac-role.yaml
+# 查看
+kubectl get role -n roledemo
+```
+
+![image-20201118095141786](k8s.assets/image-20201118095141786.png)
+
+### 10.3.4 创建角色绑定
+
+我们还是通过 `rbac-rolebinding.yaml` 的方式，来创建我们的角色绑定
+
+![image-20201118095248052](k8s.assets/image-20201118095248052.png)
+
+```yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: read-pods
+  namespace: roledemo
+subjects:
+- kind: User
+  name: mary # Name is case sensitive
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role # this must be Role or ClusterRole
+  name: pod-reader # this must match the name of the Role or ClusterRole you wish to bind to
+  apiGroup: rbac.authorization.k8s.io
+```
+
+然后创建我们的角色绑定
+
+```bash
+# 创建角色绑定
+kubectl apply -f rbac-rolebinding.yaml
+# 查看角色绑定
+kubectl get role,rolebinding -n roledemo
+```
+
+![image-20201118095357067](k8s.assets/image-20201118095357067.png)
+
+### 10.3.5 使用证书识别身份
+
+我们首先得有一个 rbac-user.sh 证书脚本
+
+![image-20201118095541427](k8s.assets/image-20201118095541427.png)
+
+![image-20201118095627954](k8s.assets/image-20201118095627954.png)
+
+```sh
+cat > mary-csr.json <<EOF
+{
+  "CN": "mary",
+  "hosts": [],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "L": "BeiJing",
+      "ST": "BeiJing"
+    }
+  ]
+}
+EOF
+
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes mary-csr.json | cfssljson -bare mary 
+
+kubectl config set-cluster kubernetes \
+  --certificate-authority=ca.pem \
+  --embed-certs=true \
+  --server=https://192.168.31.63:6443 \
+  --kubeconfig=mary-kubeconfig
+  
+kubectl config set-credentials mary \
+  --client-key=mary-key.pem \
+  --client-certificate=mary.pem \
+  --embed-certs=true \
+  --kubeconfig=mary-kubeconfig
+
+kubectl config set-context default \
+  --cluster=kubernetes \
+  --user=mary \
+  --kubeconfig=mary-kubeconfig
+
+kubectl config use-context default --kubeconfig=mary-kubeconfig
+```
+
+这里包含了很多证书文件，在TSL目录下，需要复制过来
+
+> 没有这些证书文件，可能得学习如何生成证书文件
+
+通过下面命令执行我们的脚本
+
+```bash
+./rbac-user.sh
+```
+
+最后我们进行测试
+
+```bash
+# 用get命令查看 pod 【有权限】
+kubectl get pods -n roledemo
+# 用get命令查看svc 【没权限】
+kubectl get svc -n roledmeo
+```
+
+![image-20201118100051043](k8s.assets/image-20201118100051043-16388411523481.png)
 
 
 
+# 11. Ingress
+
+## 11.1 前言
+
+原来我们需要将端口号对外暴露，通过 ip + 端口号就可以进行访问
+
+原来是使用Service中的NodePort来实现
+
+- 在每个节点上都会启动端口
+- 在访问的时候通过任何节点，通过ip + 端口号就能实现访问
+
+但是NodePort还存在一些缺陷
+
+- 因为端口不能重复，所以每个端口只能使用一次，一个端口对应一个应用
+- 实际访问中都是用域名，根据不同域名跳转到不同端口服务中
+
+## 11.2 Ingress和Pod关系
+
+pod 和 ingress 是通过service进行关联的，而ingress作为统一入口，由service关联一组pod中
+
+![image-20201118102637839](k8s.assets/image-20201118102637839.png)
+
+- 首先service就是关联我们的pod
+- 然后ingress作为入口，首先需要到service，然后发现一组pod
+- 发现pod后，就可以做负载均衡等操作
+
+## 11.3 Ingress工作流程
+
+在实际的访问中，我们都是需要维护很多域名， a.com  和  b.com
+
+然后不同的域名对应的不同的Service，然后service管理不同的pod
+
+![image-20201118102858617](k8s.assets/image-20201118102858617.png)
+
+需要注意，ingress不是内置的组件，需要我们单独的安装
+
+## 11.4 使用Ingress
+
+步骤如下所示
+
+- 部署ingress Controller【需要下载官方的】
+- 创建ingress规则【对哪个Pod、名称空间配置规则】
+
+### 11.4.1 创建Nginx Pod
+
+创建一个nginx应用，然后对外暴露端口
+
+```bash
+# 创建pod
+kubectl create deployment web --image=nginx
+# 查看
+kubectl get pods
+```
+
+对外暴露端口
+
+```bash
+kubectl expose deployment web --port=80 --target-port=80 --type:NodePort
+```
+
+### 11.4.2 部署 ingress controller
+
+下面我们来通过yaml的方式，部署我们的`ingress-con.yaml`，配置文件如下所示
+
+![image-20201118105427248](k8s.assets/image-20201118105427248.png)
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: nginx-configuration
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: tcp-services
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: udp-services
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nginx-ingress-serviceaccount
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: nginx-ingress-clusterrole
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - endpoints
+      - nodes
+      - pods
+      - secrets
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - "extensions"
+      - "networking.k8s.io"
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - "extensions"
+      - "networking.k8s.io"
+    resources:
+      - ingresses/status
+    verbs:
+      - update
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: Role
+metadata:
+  name: nginx-ingress-role
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - pods
+      - secrets
+      - namespaces
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      # Defaults to "<election-id>-<ingress-class>"
+      # Here: "<ingress-controller-leader>-<nginx>"
+      # This has to be adapted if you change either parameter
+      # when launching the nginx-ingress-controller.
+      - "ingress-controller-leader-nginx"
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - endpoints
+    verbs:
+      - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: nginx-ingress-role-nisa-binding
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nginx-ingress-role
+subjects:
+  - kind: ServiceAccount
+    name: nginx-ingress-serviceaccount
+    namespace: ingress-nginx
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: nginx-ingress-clusterrole-nisa-binding
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nginx-ingress-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: nginx-ingress-serviceaccount
+    namespace: ingress-nginx
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-ingress-controller
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/part-of: ingress-nginx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ingress-nginx
+        app.kubernetes.io/part-of: ingress-nginx
+      annotations:
+        prometheus.io/port: "10254"
+        prometheus.io/scrape: "true"
+    spec:
+      hostNetwork: true
+      # wait up to five minutes for the drain of connections
+      terminationGracePeriodSeconds: 300
+      serviceAccountName: nginx-ingress-serviceaccount
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: nginx-ingress-controller
+          image: lizhenliang/nginx-ingress-controller:0.30.0
+          args:
+            - /nginx-ingress-controller
+            - --configmap=$(POD_NAMESPACE)/nginx-configuration
+            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
+            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
+            - --publish-service=$(POD_NAMESPACE)/ingress-nginx
+            - --annotations-prefix=nginx.ingress.kubernetes.io
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+            # www-data -> 101
+            runAsUser: 101
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 10
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /wait-shutdown
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ingress-nginx
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+spec:
+  limits:
+  - min:
+      memory: 90Mi
+      cpu: 100m
+    type: Container
+```
+
+这个文件里面，需要注意的是 hostNetwork: true，改成ture是为了让后面访问到
+
+```bash
+kubectl apply -f ingress-con.yaml
+```
+
+通过这种方式，其实我们在外面就能访问，这里还需要在外面添加一层
+
+```bash
+kubectl apply -f ingress-con.yaml
+```
+
+![image-20201118111256631](k8s.assets/image-20201118111256631.png)
+
+最后通过下面命令，查看是否成功部署 ingress
+
+```bash
+kubectl get pods -n ingress-nginx
+```
+
+![image-20201118111424735](k8s.assets/image-20201118111424735.png)
+
+### 11.4.3 创建ingress规则文件
+
+创建ingress规则文件，`ingress-http.yaml`
+
+![image-20201118111700534](k8s.assets/image-20201118111700534.png)
+
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: example-ingress
+spec:
+  rules:
+  - host: example.ingredemo.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: web
+          servicePort: 80
+```
+
+```bash
+kubectl apply -f ingress-http.yaml
+```
 
 
 
+### 11.4.4 添加域名访问规则
 
+在windows 的 hosts文件，添加域名访问规则【因为我们没有域名解析，所以只能这样做】
+
+![image-20201118112029820](k8s.assets/image-20201118112029820.png)
+
+最后通过域名就能访问
+
+![image-20201118112212519](k8s.assets/image-20201118112212519-16388413608982.png)
+
+# 12. Helm
+
+Helm就是一个包管理工具【类似于npm】
+
+![img](k8s.assets/892532-20180224212352306-705544441.png)
+
+## 12.1 为什么引入Helm
+
+首先在原来项目中都是基于yaml文件来进行部署发布的，而目前项目大部分微服务化或者模块化，会分成很多个组件来部署，每个组件可能对应一个deployment.yaml,一个service.yaml,一个Ingress.yaml还可能存在各种依赖关系，这样一个项目如果有5个组件，很可能就有15个不同的yaml文件，这些yaml分散存放，如果某天进行项目恢复的话，很难知道部署顺序，依赖关系等，而所有这些包括
+
+- 基于yaml配置的集中存放
+- 基于项目的打包
+- 组件间的依赖
+
+但是这种方式部署，会有什么问题呢？
+
+- 如果使用之前部署单一应用，少数服务的应用，比较合适
+- 但如果部署微服务项目，可能有几十个服务，每个服务都有一套yaml文件，需要维护大量的yaml文件，版本管理特别不方便
+
+Helm的引入，就是为了解决这个问题
+
+- 使用Helm可以把这些YAML文件作为整体管理
+- 实现YAML文件高效复用
+- 使用helm应用级别的版本管理
+
+## 12.2 Helm介绍
+
+Helm是一个Kubernetes的包管理工具，就像Linux下的包管理器，如yum/apt等，可以很方便的将之前打包好的yaml文件部署到kubernetes上。
+
+Helm有三个重要概念
+
+- helm：一个命令行客户端工具，主要用于Kubernetes应用chart的创建、打包、发布和管理
+- Chart：应用描述，一系列用于描述k8s资源相关文件的集合
+- Release：基于Chart的部署实体，一个chart被Helm运行后将会生成对应的release，将在K8S中创建出真实的运行资源对象。也就是应用级别的版本管理
+- Repository：用于发布和存储Chart的仓库
+
+## 12.3 Helm组件及架构
+
+Helm采用客户端/服务端架构，有如下组件组成
+
+- Helm CLI是Helm客户端，可以在本地执行
+- Tiller是服务器端组件，在Kubernetes集群上运行，并管理Kubernetes应用程序
+- Repository是Chart仓库，Helm客户端通过HTTP协议来访问仓库中Chart索引文件和压缩包
+
+![image-20201119095458328](k8s.assets/image-20201119095458328.png)
+
+## 12.4 Helm v3变化
+
+2019年11月13日，Helm团队发布了Helm v3的第一个稳定版本
+
+该版本主要变化如下
+
+- 架构变化
+
+  - 最明显的变化是Tiller的删除
+  - V3版本删除Tiller
+  - relesase可以在不同命名空间重用
+
+V3之前
+
+![image-20201118171523403](k8s.assets/image-20201118171523403.png)
+
+ V3版本
+
+![image-20201118171956054](k8s.assets/image-20201118171956054.png)
+
+## 12.5 helm配置
+
+首先我们需要去 [官网下载](https://helm.sh/docs/intro/quickstart/)
+
+- 第一步，[下载helm](https://github.com/helm/helm/releases)安装压缩文件，上传到linux系统中
+- 第二步，解压helm压缩文件，把解压后的helm目录复制到 usr/bin 目录中
+- 使用命令：helm
+
+我们都知道yum需要配置yum源，那么helm就就要配置helm源
+
+## 12.6 helm仓库
+
+添加仓库
+
+```bash
+helm repo add 仓库名  仓库地址 
+```
+
+例如
+
+```bash
+# 配置微软源
+helm repo add stable http://mirror.azure.cn/kubernetes/charts
+# 配置阿里源
+helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
+# 配置google源
+helm repo add google https://kubernetes-charts.storage.googleapis.com/
+
+# 更新
+helm repo update
+```
+
+然后可以查看我们添加的仓库地址
+
+```bash
+# 查看全部
+helm repo list
+# 查看某个
+helm search repo stable
+```
+
+![image-20201118195732281](k8s.assets/image-20201118195732281.png)
+
+或者可以删除我们添加的源
+
+```bash
+helm repo remove stable
+```
+
+## 12.7 helm基本命令
+
+- chart install
+- chart upgrade
+- chart rollback
+
+## 12.8 使用helm快速部署应用
+
+### 12.8.1 使用命令搜索应用
+
+首先我们使用命令，搜索我们需要安装的应用
+
+```bash
+# 搜索 weave仓库
+helm search repo weave
+```
+
+![image-20201118200603643](k8s.assets/image-20201118200603643.png)
+
+### 12.8.2 根据搜索内容选择安装
+
+搜索完成后，使用命令进行安装
+
+```bash
+helm install ui aliyun/weave-scope
+```
+
+可以通过下面命令，来下载yaml文件【如果】
+
+```bash
+kubectl apply -f weave-scope.yaml
+```
+
+安装完成后，通过下面命令即可查看
+
+```bash
+helm list
+```
+
+![image-20201118203727585](k8s.assets/image-20201118203727585.png)
+
+同时可以通过下面命令，查看更新具体的信息
+
+```bash
+helm status ui
+```
+
+但是我们通过查看 svc状态，发现没有对象暴露端口
+
+![image-20201118205031343](k8s.assets/image-20201118205031343.png)
+
+所以我们需要修改service的yaml文件，添加NodePort
+
+```bash
+kubectl edit svc ui-weave-scope
+```
+
+![image-20201118205129431](k8s.assets/image-20201118205129431.png)
+
+这样就可以对外暴露端口了
+
+![image-20201118205147631](k8s.assets/image-20201118205147631.png)
+
+然后我们通过 ip + 32185 即可访问
+
+### 12.8.3 如果自己创建Chart
+
+使用命令，自己创建Chart
+
+```bash
+helm create mychart
+```
+
+创建完成后，我们就能看到在当前文件夹下，创建了一个 mychart目录
+
+![image-20201118210755621](k8s.assets/image-20201118210755621.png)
+
+#### 目录格式
+
+- templates：编写yaml文件存放到这个目录
+- values.yaml：存放的是全局的yaml文件
+- chart.yaml：当前chart属性配置信息
+
+### 12.8.4 在templates文件夹创建两个文件
+
+我们创建以下两个
+
+- deployment.yaml
+- service.yaml
+
+我们可以通过下面命令创建出yaml文件
+
+```bash
+# 导出deployment.yaml
+kubectl create deployment web1 --image=nginx --dry-run -o yaml > deployment.yaml
+# 导出service.yaml 【可能需要创建 deployment，不然会报错】
+kubectl expose deployment web1 --port=80 --target-port=80 --type=NodePort --dry-run -o yaml > service.yaml
+```
+
+### 12.8.5 安装mychart
+
+执行命令创建
+
+```bash
+helm install web1 mychart
+```
+
+![image-20201118213120916](k8s.assets/image-20201118213120916.png)
+
+### 12.8.6 应用升级
+
+当我们修改了mychart中的东西后，就可以进行升级操作
+
+```bash
+helm upgrade web1 mychart
+```
+
+## 12.9 chart模板使用
+
+通过传递参数，动态渲染模板，yaml内容动态从传入参数生成
+
+![image-20201118213630083](k8s.assets/image-20201118213630083.png)
+
+刚刚我们创建mychart的时候，看到有values.yaml文件，这个文件就是一些全局的变量，然后在templates中能取到变量的值，下面我们可以利用这个，来完成动态模板
+
+- 在values.yaml定义变量和值
+- 具体yaml文件，获取定义变量值
+- yaml文件中大题有几个地方不同
+  - image
+  - tag
+  - label
+  - port
+  - replicas
+
+### 12.9.1 定义变量和值
+
+在values.yaml定义变量和值
+
+![image-20201118214050899](k8s.assets/image-20201118214050899.png)
+
+### 12.9.2 获取变量和值
+
+我们通过表达式形式 使用全局变量  `{{.Values.变量名称}} `
+
+例如： `{{.Release.Name}}`
+
+![image-20201118214413203](k8s.assets/image-20201118214413203.png)
+
+### 12.9.3 安装应用
+
+在我们修改完上述的信息后，就可以尝试的创建应用了
+
+```bash
+helm install --dry-run web2 mychart
+```
+
+![image-20201118214727058](k8s.assets/image-20201118214727058-16388569500783.png)
+
+# 13. 持久化存储
+
+## 13.1 前言
+
+之前我们有提到数据卷：`emptydir` ，是本地存储，pod重启，数据就不存在了，需要对数据持久化存储
+
+对于数据持久化存储【pod重启，数据还存在】，有两种方式
+
+- nfs：网络存储【通过一台服务器来存储】
+
+## 13.2 步骤
+
+### 13.2.1 持久化服务器上操作
+
+- 找一台新的服务器nfs服务端，安装nfs
+- 设置挂载路径
+
+使用命令安装nfs
+
+```bash
+yum install -y nfs-utils
+```
+
+首先创建存放数据的目录
+
+```bash
+mkdir -p /data/nfs
+```
+
+设置挂载路径
+
+```bash
+# 打开文件
+vim /etc/exports
+# 添加如下内容
+/data/nfs *(rw,no_root_squash)
+```
+
+执行完成后，即部署完我们的持久化服务器
+
+### 13.2.2 Node节点上操作
+
+然后需要在k8s集群node节点上安装nfs，这里需要在 node1 和 node2节点上安装
+
+```bash
+yum install -y nfs-utils
+```
+
+执行完成后，会自动帮我们挂载上
+
+### 13.2.3 启动nfs服务端
+
+下面我们回到nfs服务端，启动我们的nfs服务
+
+```bash
+# 启动服务
+systemctl start nfs
+# 或者使用以下命令进行启动
+service nfs-server start
+```
+
+![image-20201119082047766](k8s.assets/image-20201119082047766.png)
+
+### 13.2.4 K8s集群部署应用
+
+最后我们在k8s集群上部署应用，使用nfs持久化存储
+
+```bash
+# 创建一个pv文件
+mkdir pv
+# 进入
+cd pv
+```
+
+然后创建一个yaml文件  `nfs-nginx.yaml`
+
+![image-20201119082317625](k8s.assets/image-20201119082317625.png)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-dep1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        volumeMounts:
+        - name: wwwroot
+          mountPath: /usr/share/nginx/html
+        ports:
+        - containerPort: 80
+      volumes:
+        - name: wwwroot
+          nfs:
+            server: 192.168.194.180
+            path: /data/nfs
+```
+
+通过这个方式，就挂载到了刚刚我们的nfs数据节点下的 /data/nfs 目录
+
+最后就变成了：  /usr/share/nginx/html    ->  192.168.44.134/data/nfs   内容是对应的
+
+我们通过这个 yaml文件，创建一个pod
+
+```bash
+kubectl apply -f nfs-nginx.yaml
+```
+
+创建完成后，我们也可以查看日志
+
+```bash
+kubectl describe pod nginx-dep1
+```
+
+![image-20201119083444454](k8s.assets/image-20201119083444454.png)
+
+可以看到，我们的pod已经成功创建出来了，同时下图也是出于Running状态
+
+![image-20201119083514247](k8s.assets/image-20201119083514247.png)
+
+下面我们就可以进行测试了，比如现在nfs服务节点上添加数据，然后在看数据是否存在 pod中
+
+```bash
+# 进入pod中查看
+kubectl exec -it nginx-dep1 bash
+```
+
+![image-20201119095847548](k8s.assets/image-20201119095847548.png)
+
+## 13.3 PV和PVC
+
+对于上述的方式，我们都知道，我们的ip 和端口是直接放在我们的容器上的，这样管理起来可能不方便
+
+所以这里就需要用到 pv  和 pvc的概念了，方便我们配置和管理我们的 ip 地址等元信息
+
+PV：持久化存储，对存储的资源进行抽象，对外提供可以调用的地方【生产者】
+
+PVC：用于调用，不需要关心内部实现细节【消费者】
+
+PV 和 PVC 使得 K8S 集群具备了存储的逻辑抽象能力。使得在配置Pod的逻辑里可以忽略对实际后台存储
+技术的配置，而把这项配置的工作交给PV的配置者，即集群的管理者。存储的PV和PVC的这种关系，跟
+计算的Node和Pod的关系是非常类似的；PV和Node是资源的提供者，根据集群的基础设施变化而变
+化，由K8s集群管理员配置；而PVC和Pod是资源的使用者，根据业务服务的需求变化而变化，由K8s集
+群的使用者即服务的管理员来配置。
+
+### 13.3.1 实现流程
+
+- PVC绑定PV
+- 定义PVC
+- 定义PV【数据卷定义，指定数据存储服务器的ip、路径、容量和匹配模式】
+
+### 13.3.2 举例
+
+创建一个 `pvc.yaml`
+
+![image-20201119101753419](k8s.assets/image-20201119101753419.png)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-dep1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        volumeMounts:
+        - name: wwwroot
+          mountPath: /usr/share/nginx/html
+        ports:
+        - containerPort: 80
+      volumes:
+      - name: wwwroot
+        persistentVolumeClaim:
+          claimName: my-pvc
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+第一部分是定义一个 deployment，做一个部署
+
+- 副本数：3
+- 挂载路径
+- 调用：是通过pvc的模式
+
+然后定义pvc
+
+![image-20201119101843498](k8s.assets/image-20201119101843498.png)
+
+然后在创建一个 `pv.yaml`
+
+![image-20201119101957777](k8s.assets/image-20201119101957777.png)
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    path: /k8s/nfs
+    server: 192.168.44.134
+```
+
+然后就可以创建pod了
+
+```bash
+kubectl apply -f pv.yaml
+```
+
+然后我们就可以通过下面命令，查看我们的 pv  和 pvc之间的绑定关系
+
+```bash
+kubectl get pv, pvc
+```
+
+![image-20201119102332786](k8s.assets/image-20201119102332786.png)
+
+到这里为止，我们就完成了我们 pv 和 pvc的绑定操作，通过之前的方式，进入pod中查看内容
+
+```bash
+kubect exec -it nginx-dep1 bash
+```
+
+然后查看  /usr/share/nginx.html
+
+![image-20201119102448226](k8s.assets/image-20201119102448226.png)
+
+也同样能看到刚刚的内容，其实这种操作和之前我们的nfs是一样的，只是多了一层pvc绑定pv的操作
 
 
 
