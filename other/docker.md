@@ -20,7 +20,7 @@
 
 ## 1.1 普遍的虚拟化技术
 
-![image-20210531134630897](docker.assets/image-20210531134630897.png)
+![image-20210531134630897](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082159759.png)
 
 **虚拟化的技术缺点** 
 
@@ -34,9 +34,9 @@
 
 容器化技术不是模拟一个完整的操作系统 
 
-![image-20210531134721889](docker.assets/image-20210531134721889.png)
+![image-20210531134721889](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082159723.png)
 
-## 1.3 比较docker和虚拟机技术的不同 
+## 1.3 比较docker和虚拟机技术的不同
 
 - 传统虚拟机，虚拟出一条硬件，运行一个完整的操作系统，然后再这个系统上安装和运行软件 
 - 容器内的应用直接运行在宿主机的内核中，容器是没有自己的内核的，也没有虚拟硬件 
@@ -62,7 +62,7 @@
 
 仓库分为共有仓库和私有仓库，Docker Hub（默认是国外的，国内阿里云等都有容量服务器
 
-![image-20210531135025783](docker.assets/image-20210531135025783.png)
+![image-20210531135025783](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082159184.png)
 
 ## 2.1 docker的安装与卸载
 
@@ -150,7 +150,7 @@ docker是一个Client-Server (CS) 机构的系统，dokcer的守护进程运行�
 
 docker-Server接收到docker-Client的指令，就会执行这个命令 
 
-![image-20210531140417721](docker.assets/image-20210531140417721.png)
+![image-20210531140417721](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200936.png)
 
 ## 3.2 docker为什么比vm快 
 
@@ -158,13 +158,13 @@ docker-Server接收到docker-Client的指令，就会执行这个命令
 
 2. `docker`利用的是宿主机的内核，`vm`需要的是`GuestOS `
 
-![image-20210531140500212](docker.assets/image-20210531140500212.png)
+![image-20210531140500212](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200717.png)
 
 so,新建一个容器的时候，docker不需要像虚拟机一样重新加载一个操作系统，避免引导。 
 
 虚拟机是加载`GuestOS`，分钟级别的，慢，而docker是利用宿主机的操作系统，省略了这个复杂的过程，秒级 
 
-![image-20210531140525134](docker.assets/image-20210531140525134.png)
+![image-20210531140525134](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200499.png)
 
 # 4.常用命令
 
@@ -399,7 +399,7 @@ bootfs(boot file system)主要包含bootloader和kernel。bootloader主要引导
 
 rootfs(root file system) 在bootfs之上，包含的就是典型linux系统中的/dev,/proc,/bin/etc 等标准目录和文件。rootfs就是各种不同的操作系统发行版，比如ubuntu,centos等等 
 
-![image-20210531145315164](docker.assets/image-20210531145315164.png)
+![image-20210531145315164](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200399.png)
 
 对于一个精简的OS,rootfs可以很小，只需要包含最基本的命令，工具和程序库就可以了，因为底层直接用Host的kernel，自己只需要提供rootfs就可以了。由此可见对于不同的linux发行版，bootfs基本是一致的，rootfs会有差别，因此不同的发行版可以共用bootfs 
 
@@ -453,7 +453,7 @@ docker run -it -v 主机目录:容器内目录 centos /bin/bash
 docker inspect 容器id #查询 
 ```
 
-![image-20210531145933689](docker.assets/image-20210531145933689.png)
+![image-20210531145933689](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200950.png)
 
 ```shell
 #试验：安装mysql 
@@ -504,7 +504,7 @@ docker build -f dockerfile1 -t centos-private:1.0 .
 
 例：多个mysql同步数据 、
 
-![image-20210531150352707](docker.assets/image-20210531150352707.png)
+![image-20210531150352707](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200975.png)
 
 ```shell
 docker run -it --name centos_001 -v vl_001:/home centos:7.9.2009			#父容器 
@@ -534,7 +534,7 @@ dockerfile是用来构建docker镜像的文件
 
 4. 每一个指令都会创建提交一个新的镜像层，并提交
 
-![image-20210531150614291](docker.assets/image-20210531150614291.png)
+![image-20210531150614291](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200651.png)
 
 dockerfile是面向开发的，发布项目，做镜像，就要编写dockerfile 
 
@@ -663,7 +663,7 @@ docker logout			#退出账号
 
 按照官方文档走就行 
 
-![image-20210531151730939](docker.assets/image-20210531151730939.png)
+![image-20210531151730939](https://raw.githubusercontent.com/helen-frank/img/master/img/202208082200028.png)
 
 # 9.docer网络
 
