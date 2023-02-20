@@ -279,4 +279,4 @@ func FindNewReplicaSet(deployment *apps.Deployment, rsList []*apps.ReplicaSet) *
 
 当发现存在和newRS Template一致的oldRS时，会更新oldRS的annotations为最新的版本号，并将旧的版本号追加annotations deployment.kubernetes.io/revision-history （xxx,xxx,xxx,oldRSVersion）,长度限制为2000字符（release-1.18）,当超出2000之后会报Warning`Not appending revision due to length limit of 2000 reached`
 
-因为是更新原有rs而来所以表现为部分版本号缺失
+因为是更新原有rs而来所以表现为部分版本号缺失，在annotations里可以拿到历史版本
